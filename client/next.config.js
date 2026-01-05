@@ -2,12 +2,6 @@
 const nextConfig = {
   experimental: {
     ssr: false
-  },
-  trailingSlash: true,
-  exportPathMap: function() {
-    return {
-      '/': { page: '/' }
-    }
   }
 }
 
