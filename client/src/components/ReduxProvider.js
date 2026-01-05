@@ -6,9 +6,13 @@ import { store, persistor } from "../store/store";
 export default function ReduxProvider({ children }) {
   return (
     <Provider store={store}>
-      <PersistGate loading={null} persistor={persistor}>
-        {children}
-      </PersistGate>
+      {persistor ? (
+        <PersistGate loading={null} persistor={persistor}>
+          {children}
+        </PersistGate>
+      ) : (
+        children
+      )}
     </Provider>
   );
 }
