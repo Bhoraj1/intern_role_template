@@ -9,10 +9,11 @@ import {
 } from "../controllers/authController.js";
 import { isLogin } from "../middlewares/authMiddleware.js";
 import { authorizeRoles } from "../middlewares/roleMiddleware.js";
+import { serviceImgUpload } from "../utils/multerHandler.js";
 
 const authRouter = express.Router();
 
-authRouter.post("/register", register);
+authRouter.post("/register", serviceImgUpload.single("image"), register);
 authRouter.post("/login", login);
 authRouter.post("/logout", logout);
 authRouter.get("/verify", isLogin, verifyToken);

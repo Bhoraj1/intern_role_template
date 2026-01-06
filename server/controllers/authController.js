@@ -5,6 +5,8 @@ import {
   generateToken,
 } from "../utils/authUtils.js";
 import { sendResponse } from "../utils/responseUtils.js";
+import { removeImg } from "../utils/removeImg.js";
+import { compressImg } from "../utils/compressImg.js";
 
 export const register = async (req, res) => {
   try {
@@ -13,6 +15,9 @@ export const register = async (req, res) => {
     const validRoles = ["admin", "manager", "staff", "user"];
 
     if (role && !validRoles.includes(role)) {
+      if (req.file) {
+        removeImg(req.file.path);
+      }
       return sendResponse(res, {
         success: false,
         message: "Invalid role. Valid roles are: admin, manager, staff, user",
@@ -20,13 +25,33 @@ export const register = async (req, res) => {
       });
     }
 
+    // Check if user already exists
+    const existing = await db.query("SELECT * FROM users WHERE email = $1", [email]);
+    if (existing.rows.length > 0) {
+      if (req.file) {
+        removeImg(req.file.path);
+      }
+      return sendResponse(res, {
+        success: false,
+        message: "Email already exists. Use another email.",
+        statusCode: 409,
+      });
+    }
+
     const userRole =
       role && ["admin", "manager", "staff"].includes(role) ? role : "user";
     const hashedPassword = await hashPassword(password);
 
+    let imagePath = "";
+    if (req.file) {
+      const outputPath = `uploads/users/user-${req.file.filename}`;
+      await compressImg(req.file.path, outputPath);
+      imagePath = outputPath;
+    }
+
     const result = await db.query(
-      "INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id, username, email, role, created_at",
-      [username, email, hashedPassword, userRole]
+      "INSERT INTO users (username, email, password, role, image) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email, role, image, created_at",
+      [username, email, hashedPassword, userRole, imagePath]
     );
 
     return sendResponse(res, {
@@ -35,6 +60,9 @@ export const register = async (req, res) => {
       statusCode: 201,
     });
   } catch (error) {
+    if (req.file) {
+      removeImg(req.file.path);
+    }
     if (error.code === "23505") {
       return sendResponse(res, {
         success: false,
@@ -86,6 +114,7 @@ export const login = async (req, res) => {
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
+      sameSite: "none",
       maxAge: 24 * 60 * 60 * 1000,
     });
 
@@ -113,7 +142,7 @@ export const getAllUsers = async (req, res) => {
   try {
     const currentUserRole = req.user.role;
 
-    let query = "SELECT id, username, email, role, created_at FROM users";
+    let query = "SELECT id, username, email, role, image, created_at FROM users";
     let params = [];
 
     // Filter users based on current user's role
@@ -189,8 +218,8 @@ export const deleteUser = async (req, res) => {
     const { id } = req.params;
     const currentUserRole = req.user.role;
 
-    // Get target user's role
-    const targetUser = await db.query("SELECT role FROM users WHERE id = $1", [
+    // Get target user's role and image
+    const targetUser = await db.query("SELECT role, image FROM users WHERE id = $1", [
       id,
     ]);
 
@@ -202,7 +231,7 @@ export const deleteUser = async (req, res) => {
       });
     }
 
-    const targetRole = targetUser.rows[0].role;
+    const { role: targetRole, image } = targetUser.rows[0];
 
     // Define role hierarchy and permissions
     const rolePermissions = {
@@ -226,6 +255,11 @@ export const deleteUser = async (req, res) => {
 
     // Delete the user
     await db.query("DELETE FROM users WHERE id = $1", [id]);
+
+    // Remove user image if exists
+    if (image) {
+      removeImg(image);
+    }
 
     return sendResponse(res, {
       message: "User deleted successfully",
